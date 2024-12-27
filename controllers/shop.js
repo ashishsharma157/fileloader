@@ -1,8 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const pdfDocument=require('pdfkit');
+const pdfDocument = require("pdfkit");
 const Product = require("../models/product");
 const Order = require("../models/order");
+
+const ITEM_PER_PAGE = 1;
 
 exports.getProducts = (req, res, next) => {
   Product.find()
@@ -39,13 +41,27 @@ exports.getProduct = (req, res, next) => {
 };
 
 exports.getIndex = (req, res, next) => {
-  console.log(req.session.isLoggedIn);
+  const page = +req.query.page || 1;
+
   Product.find()
+    .countDocuments()
+    .then((numProducts) => {
+      totalItems = numProducts;
+      return Product.find()
+        .skip((page - 1) * ITEM_PER_PAGE)
+        .limit(ITEM_PER_PAGE);
+    })
     .then((products) => {
       res.render("shop/index", {
         prods: products,
         pageTitle: "Shop",
         path: "/",
+        currentPage: page,
+        hasNextPage: ITEM_PER_PAGE * page < totalItems,
+        hasPreviousPage: page > 1,
+        nextPage: page + 1,
+        previousPage: page - 1,
+        lastPage: Math.ceil(totalItems / ITEM_PER_PAGE),
       });
     })
     .catch((err) => {
@@ -153,8 +169,7 @@ exports.getOrders = (req, res, next) => {
 
 exports.getInvoice = (req, res, next) => {
   const orderId = req.params.orderId;
-  Order
-    .findById(orderId)
+  Order.findById(orderId)
     .then((order) => {
       if (!order) {
         return next(new Error("No error found."));
@@ -168,7 +183,7 @@ exports.getInvoice = (req, res, next) => {
       console.log(invoiceName);
       const invoicePath = path.join("data", "invoices", invoiceName);
       console.log(invoicePath);
-      const pdfdoc=new pdfDocument();
+      const pdfdoc = new pdfDocument();
       pdfdoc.pipe(fs.createWriteStream(invoicePath));
       pdfdoc.pipe(res);
       res.setHeader("Content-Type", "application/pdf");
@@ -177,26 +192,26 @@ exports.getInvoice = (req, res, next) => {
         'inline: filename="' + invoiceName + '"'
       );
 
-      pdfdoc.fontSize(26).text('Invoice', {
-        underline: true
+      pdfdoc.fontSize(26).text("Invoice", {
+        underline: true,
       });
-      pdfdoc.text('-----------------------');
+      pdfdoc.text("-----------------------");
       let totalPrice = 0;
-      order.products.forEach(prod => {
+      order.products.forEach((prod) => {
         totalPrice += prod.quantity * prod.product.price;
         pdfdoc
           .fontSize(14)
           .text(
             prod.product.title +
-              ' - ' +
+              " - " +
               prod.quantity +
-              ' x ' +
-              '$' +
+              " x " +
+              "$" +
               prod.product.price
           );
       });
-      pdfdoc.text('---');
-      pdfdoc.fontSize(20).text('Total Price: $' + totalPrice);
+      pdfdoc.text("---");
+      pdfdoc.fontSize(20).text("Total Price: $" + totalPrice);
 
       pdfdoc.end();
       // fs.readFile(invoicePath, (err, data) => {
